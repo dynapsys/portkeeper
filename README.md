@@ -4,12 +4,12 @@ Reserve and manage localhost hosts/ports for starting servers. Transparently upd
 
 ## Features
 
-- Reserve a free port (preferred port and/or range)
-- Optionally hold the port by binding a dummy socket
-- Release reservation (and close the held socket)
-- Atomic updates to `.env` and `config.json` (+ optional backup)
-- Simple file-locking to avoid races (fcntl / msvcrt / fallback)
-- Context manager API and a tiny CLI (`portkeeper`)
+- **Unique Port Reservations**: Ensures that ports are uniquely reserved within a specified range, preventing conflicts.
+- **Concurrency Safety**: Uses file locking to ensure safe port reservation and release operations in concurrent environments.
+- **Multi-Port Reservations**: Allows reserving multiple ports at once with a single call using the `count` parameter, ideal for applications needing multiple ports.
+- **Flexible Port Ranges**: Supports both default and custom port ranges for reservations.
+- **Host-Specific Reservations**: Supports reserving ports for specific hosts, allowing for host-specific configurations.
+- **CLI Interface**: Provides a command-line interface for easy port management.
 
 ## Install
 
@@ -72,7 +72,53 @@ portkeeper release 8080
 portkeeper status
 ```
 
-### Preflight multiple ports and outputs with `prepare`
+### Reserving a Single Port
+
+```bash
+portkeeper reserve
+```
+
+This command reserves a single port in the default range (1024-65535).
+
+### Reserving Multiple Ports
+
+```bash
+portkeeper reserve --count 3 --range 5000-5100
+```
+
+This command reserves 3 ports within the range 5000-5100.
+
+### Reserving a Port with Hold
+
+```bash
+portkeeper reserve --hold
+```
+
+This reserves a port and holds it open with a socket, preventing other processes from using it even if they don't check the registry.
+
+### Reserving Multiple Ports with Hold
+
+```bash
+portkeeper reserve --count 2 --hold --range 5000-5100
+```
+
+This reserves 2 ports within the specified range and holds them open with sockets.
+
+### Releasing Ports
+
+Ports are automatically released when the process ends if not held. To manually release:
+
+```bash
+portkeeper release 5000
+```
+
+Or release multiple ports:
+
+```bash
+portkeeper release 5000 5001 5002
+```
+
+## Preflight multiple ports and outputs with `prepare`
 
 Use a single config (JSON or YAML) to reserve several ports and update multiple outputs before starting your stack.
 

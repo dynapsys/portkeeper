@@ -1,4 +1,4 @@
 from .core import PortRegistry, Reservation, PortKeeperError
 
 __all__ = ["PortRegistry", "Reservation", "PortKeeperError"]
-__version__ = "0.1.2"
+__version__ = "0.2.0"

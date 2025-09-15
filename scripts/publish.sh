@@ -18,6 +18,7 @@ BUMP_TYPE=""
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)
 VENV="$PROJECT_ROOT/.venv"
 PY="python3"
+PACKAGE_NAME="portkeeper"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -84,37 +85,74 @@ cd "$PROJECT_ROOT"
 
 echo "✅ Build successful"
 
-# Check if the version already exists on PyPI (for pypi repo only)
-CURRENT_VERSION=$("$VENV/bin/python" -c "import portkeeper; print(portkeeper.__version__)")
-if [ "$REPO" = "pypi" ]; then
-  echo "🔍 Checking if version $CURRENT_VERSION already exists on PyPI..."
-  if "$VENV/bin/python" -m pip install "portkeeper==$CURRENT_VERSION" --dry-run --no-deps --index-url https://pypi.org/simple >/dev/null 2>&1; then
-    echo "❌ Version $CURRENT_VERSION already exists on PyPI. Please bump the version before publishing."
-    echo "💡 Use --bump patch, --bump minor, or --bump major to increment the version."
-    exit 1
-  else
-    echo "✅ Version $CURRENT_VERSION is unique on PyPI. Proceeding with publication."
-  fi
-fi
+# Function to check if version already exists on PyPI or TestPyPI
+check_version_unique() {
+    local repo=$1
+    local package=$2
+    local version=$3
+    local url=""
+    if [ "$repo" == "pypi" ]; then
+        url="https://pypi.org/pypi/$package/$version/json"
+    else
+        url="https://test.pypi.org/pypi/$package/$version/json"
+    fi
+    if curl -s -f "$url" > /dev/null; then
+        return 0  # Version exists
+    else
+        return 1  # Version does not exist
+    fi
+}
 
-# Upload to repository
-echo "🚀 Uploading to $REPO..."
-echo "⚠️ To avoid interactive prompts, set TWINE_USERNAME and TWINE_PASSWORD environment variables or use --username and --password arguments."
-echo "⚠️ For tokens, use username '__token__' and password 'pypi-<YOUR_TOKEN>'. See README.md for details."
-TWINE_ARGS=""
-if [ -n "$USERNAME" ]; then
-  TWINE_ARGS="--username '$USERNAME'"
-fi
-if [ -n "$PASSWORD" ]; then
-  TWINE_ARGS="$TWINE_ARGS --password '$PASSWORD'"
-fi
+# Function to upload to TestPyPI
+test_upload() {
+    CURRENT_VERSION=$("$VENV/bin/python" -c "import portkeeper; print(portkeeper.__version__)")
+    check_version_unique "testpypi" "$PACKAGE_NAME" "$CURRENT_VERSION"
+    if [ $? -eq 0 ]; then
+        echo "❌ Version $CURRENT_VERSION already exists on TestPyPI. Please bump the version."
+        exit 1
+    fi
+    echo "🚀 Uploading to testpypi..."
+    echo "⚠️ To avoid interactive prompts, set TWINE_USERNAME and TWINE_PASSWORD environment variables or use --username and --password arguments."
+    echo "⚠️ For tokens, use username '__token__' and password 'pypi-<YOUR_TOKEN>'. See README.md for details."
+    echo "⚠️ If you encounter issues with password input, ensure your terminal supports secure input or use environment variables."
+    TWINE_ARGS=""
+    if [ -n "$USERNAME" ]; then
+      TWINE_ARGS="--username '$USERNAME'"
+    fi
+    if [ -n "$PASSWORD" ]; then
+      TWINE_ARGS="$TWINE_ARGS --password '$PASSWORD'"
+    fi
+    eval "$VENV/bin/python -m twine upload --repository testpypi $TWINE_ARGS dist/*" || { echo "❌ Test publication failed. Check credentials or if version already exists on TestPyPI."; echo "💡 Use 'export TWINE_USERNAME=\"__token__\"' and 'export TWINE_PASSWORD=\"pypi-<YOUR_TOKEN>\"' before running this script."; exit 1; }
+    echo "✅ Successfully published to TestPyPI"
+    echo "✅ View at: https://test.pypi.org/project/$PACKAGE_NAME/$CURRENT_VERSION/"
+}
+
+# Function to upload to PyPI
+upload() {
+    CURRENT_VERSION=$("$VENV/bin/python" -c "import portkeeper; print(portkeeper.__version__)")
+    check_version_unique "pypi" "$PACKAGE_NAME" "$CURRENT_VERSION"
+    if [ $? -eq 0 ]; then
+        echo "❌ Version $CURRENT_VERSION already exists on PyPI. Please bump the version."
+        exit 1
+    fi
+    echo "🚀 Uploading to pypi..."
+    echo "⚠️ To avoid interactive prompts, set TWINE_USERNAME and TWINE_PASSWORD environment variables or use --username and --password arguments."
+    echo "⚠️ For tokens, use username '__token__' and password 'pypi-<YOUR_TOKEN>'. See README.md for details."
+    echo "⚠️ If you encounter issues with password input, ensure your terminal supports secure input or use environment variables."
+    TWINE_ARGS=""
+    if [ -n "$USERNAME" ]; then
+      TWINE_ARGS="--username '$USERNAME'"
+    fi
+    if [ -n "$PASSWORD" ]; then
+      TWINE_ARGS="$TWINE_ARGS --password '$PASSWORD'"
+    fi
+    eval "$VENV/bin/python -m twine upload $TWINE_ARGS dist/*" || { echo "❌ Publication failed. Check credentials or if version already exists on PyPI."; exit 1; }
+    echo "✅ Successfully published to PyPI"
+    echo "✅ View at: https://pypi.org/project/$PACKAGE_NAME/$CURRENT_VERSION/"
+}
 
 if [ "$REPO" = "testpypi" ]; then
-  eval "$VENV/bin/python -m twine upload --repository testpypi $TWINE_ARGS dist/*" || { echo "❌ Test publication failed. Check credentials or if version already exists on TestPyPI."; exit 1; }
-  echo "✅ Successfully published to TestPyPI"
-  echo "✅ View at: https://test.pypi.org/project/portkeeper/$CURRENT_VERSION/"
+  test_upload
 else
-  eval "$VENV/bin/python -m twine upload $TWINE_ARGS dist/*" || { echo "❌ Publication failed. Check credentials or if version already exists on PyPI."; exit 1; }
-  echo "✅ Successfully published to PyPI"
-  echo "✅ View at: https://pypi.org/project/portkeeper/$CURRENT_VERSION/"
+  upload
 fi
