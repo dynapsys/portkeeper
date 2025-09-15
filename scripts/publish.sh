@@ -1,56 +1,105 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Colors for output
-GREEN="\033[0;32m"
-YELLOW="\033[1;33m"
-RED="\033[0;31m"
-NC="\033[0m" # No Color
+# Publish PortKeeper to PyPI or TestPyPI
+# Usage: scripts/publish.sh [--test] [--clean] [--username USER] [--password PASS] [--bump BUMP_TYPE]
+#   --test: Publish to TestPyPI instead of PyPI
+#   --clean: Clean build artifacts before building
+#   --username USER: Specify username (or token identifier, e.g., __token__)
+#   --password PASS: Specify password (or token value)
+#   --bump BUMP_TYPE: Increment version before publishing (patch, minor, major)
+#   If username/password not provided, falls back to TWINE_USERNAME/TWINE_PASSWORD env vars or ~/.pypirc
 
-echo "${YELLOW}📦 Publishing to PyPI with automatic version increment...${NC}"
+REPO="pypi"
+CLEAN="false"
+USERNAME=""
+PASSWORD=""
+BUMP_TYPE=""
+PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)
+VENV="$PROJECT_ROOT/.venv"
+PY="python3"
 
-# Ensure setuptools and twine are installed
-echo "${YELLOW}Checking dependencies...${NC}"
-if ! python3 -c "import setuptools" &> /dev/null; then
-    echo "${YELLOW}Installing setuptools...${NC}"
-    pip3 install setuptools
-fi
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --test)
+      REPO="testpypi"
+      shift
+      ;;
+    --clean)
+      CLEAN="true"
+      shift
+      ;;
+    --username)
+      USERNAME="$2"
+      shift 2
+      ;;
+    --password)
+      PASSWORD="$2"
+      shift 2
+      ;;
+    --bump)
+      BUMP_TYPE="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
-if ! command -v twine &> /dev/null; then
-    echo "${YELLOW}Installing twine...${NC}"
-    pip3 install twine
-fi
+echo "📦 Publishing to $REPO"
 
-# Auto-increment patch version
-echo "${YELLOW}🔢 Auto-incrementing patch version...${NC}"
-if python3 scripts/version_manager.py patch; then
-    echo "${GREEN}✅ Version incremented successfully${NC}"
+# Create or reuse virtual environment
+if [ ! -d "$VENV" ]; then
+  echo "Creating virtual environment at $VENV..."
+  "$PY" -m venv "$VENV"
 else
-    echo "${RED}❌ Failed to increment version${NC}"
-    exit 1
+  echo "Using existing virtual environment at $VENV..."
 fi
 
-# Clean previous builds
-echo "${YELLOW}🧹 Cleaning previous builds...${NC}"
-rm -rf build/ dist/ *.egg-info/
+# Upgrade pip and install necessary tools
+"$VENV/bin/python" -m pip install -U pip
+"$VENV/bin/python" -m pip install build twine setuptools wheel
 
-# Build the package
-echo "${YELLOW}🏗️ Building package...${NC}"
-if python3 setup.py sdist bdist_wheel; then
-    echo "${GREEN}✅ Package built successfully${NC}"
-else
-    echo "${RED}❌ Package build failed${NC}"
-    exit 1
+echo "✅ Virtual environment setup complete with necessary tools"
+
+# Bump version if requested
+if [ -n "$BUMP_TYPE" ]; then
+  echo "🔢 Bumping version ($BUMP_TYPE)..."
+  bash "$PROJECT_ROOT/scripts/bump-version.sh" "$BUMP_TYPE"
 fi
 
-# Upload to PyPI
-echo "${YELLOW}🚀 Uploading to PyPI...${NC}"
-if twine upload dist/*; then
-    echo "${GREEN}✅ Published to PyPI successfully${NC}"
-    
-    # Get the new version for confirmation
-    NEW_VERSION=$(python3 -c "import sys; sys.path.insert(0, '.'); from edpmt import __version__; print(__version__)")
-    echo "${GREEN}🎉 New version ${NEW_VERSION} is now live on PyPI!${NC}"
+# Clean build artifacts if requested
+if [ "$CLEAN" = "true" ]; then
+  echo "🧹 Cleaning build artifacts..."
+  rm -rf "$PROJECT_ROOT/build" "$PROJECT_ROOT/dist" "$PROJECT_ROOT"/*.egg-info "$PROJECT_ROOT/src"/*.egg-info
+  find "$PROJECT_ROOT" -name "__pycache__" -type d -exec rm -rf {} +
+fi
+
+# Build package
+echo "🔨 Building package..."
+cd "$PROJECT_ROOT"
+"$VENV/bin/python" -m build || { echo "❌ Build failed. Check error messages above."; exit 1; }
+
+echo "✅ Build successful"
+
+# Upload to repository
+echo "🚀 Uploading to $REPO..."
+echo "⚠️ To avoid interactive prompts, set TWINE_USERNAME and TWINE_PASSWORD environment variables or use --username and --password arguments."
+echo "⚠️ For tokens, use username '__token__' and password 'pypi-<YOUR_TOKEN>'. See README.md for details."
+TWINE_ARGS=""
+if [ -n "$USERNAME" ]; then
+  TWINE_ARGS="--username '$USERNAME'"
+fi
+if [ -n "$PASSWORD" ]; then
+  TWINE_ARGS="$TWINE_ARGS --password '$PASSWORD'"
+fi
+
+if [ "$REPO" = "testpypi" ]; then
+  eval "$VENV/bin/python -m twine upload --repository testpypi $TWINE_ARGS dist/*" || { echo "❌ Test publication failed. Check credentials or if version already exists on TestPyPI."; exit 1; }
+  echo "✅ Successfully published to TestPyPI"
 else
-    echo "${RED}❌ Upload to PyPI failed${NC}"
-    exit 1
+  eval "$VENV/bin/python -m twine upload $TWINE_ARGS dist/*" || { echo "❌ Publication failed. Check credentials or if version already exists on PyPI."; exit 1; }
+  echo "✅ Successfully published to PyPI"
 fi
