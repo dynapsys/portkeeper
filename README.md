@@ -1,39 +1,33 @@
-# portkeeper
+# PortKeeper
 
+Reserve and manage localhost hosts/ports for starting servers. Transparently updates `.env` and `config.json` files and keeps a local registry so multiple processes and users can coordinate port reservations.
 
-Zrobiłem dla Ciebie bibliotekę i zapisałem ją jako pojedynczy plik Python (`portkeeper.py`) na kanwie — możesz go teraz otworzyć i przetestować. Krótkie podsumowanie tego, co zawiera i jak używać:
+## Features
+- Reserve a free port (optionally with preferred port or a search range)
+- Optionally hold the port by binding a dummy socket (prevents others from taking it)
+- Release reservation
+- Atomic updates to `.env` and `config.json` (with backup)
+- Simple file locking to avoid races
+- Context manager API and a tiny CLI (`portkeeper`)
 
-# Co zawiera
+## Quickstart
+```bash
+pip install portkeeper
 
-* `PortRegistry` — główna klasa do rezerwowania portów, zwalniania ich, oraz do zapisu/aktualizacji plików `.env` i `config.json`.
-* Mechanizm lokalnego rejestru (`.port_registry.json`) i prostego pliku blokady, żeby uniknąć wyścigów przy jednoczesnych rezerwacjach.
-* Opcja `hold=True` — jeśli chcesz fizycznie zablokować port, biblioteka może otworzyć gniazdo i je trzymać (w tle) aż do `release()`; przydatne gdy potrzebujesz pewności, że nikt inny nie zajmie portu.
-* Atomowe zapisy plików (tmp -> replace) przy aktualizacji `.env` i `config.json`. Tworzy kopię zapasową `config.json` przed nadpisaniem (opcjonalnie).
-* Mały CLI (`python portkeeper.py reserve ...` / `release`) do szybkiego testu.
+# Reserve preferred 8888 or a port in 8888-8988, hold it, and print JSON
+portkeeper reserve --preferred 8888 --range 8888 8988 --hold --owner myapp
 
-# Szybkie przykłady użycia
-
-Programowo (kontekst menadżera):
-
-```py
+# From Python
 from portkeeper import PortRegistry
-
-reg = PortRegistry()
-
-# zarezerwuj dowolny (ephemeral) port i trzymaj go w tle
-with reg.reserve_context(preferred=8000, hold=True, owner='my-service') as res:
-    print('port:', res.port)
-    reg.write_env({'PORT': str(res.port)}, path='.env')
-    # uruchom server, używając PORT z .env lub bezpośrednio res.port
-# po wyjściu z contextu port jest zwalniany
+with PortRegistry().reserve(preferred=8888, port_range=(8888, 8988), hold=True) as r:
+    PortRegistry().write_env({'PORT': str(r.port)})
 ```
 
-CLI:
+## CLI
+- `reserve [--preferred P] [--range START END] [--hold] [--owner OWNER] [--write-env KEY]`
+- `release PORT`
+- `status` (list reserved ports in registry)
+- `gc` (garbage-collect stale registry entries)
 
-```
-# zarezerwuj (spróbuje 8000, jeśli wolny; albo wykryje wolny)
-python portkeeper.py reserve --preferred 8000 --hold --write-env PORT
-
-# zwolnij port (usuwa wpis z registry)
-python portkeeper.py release 8000
-```
+## License
+MIT
