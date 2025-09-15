@@ -54,7 +54,8 @@ publish-test: build
 	@echo "✅ Successfully published to TestPyPI"
 
 test: venv install
-	@$(VENV)/bin/python -m pytest -q
+	@echo "Running unit tests with pytest..."
+	@$(VENV)/bin/python -m pytest -v tests/
 
 lint: venv install-dev
 	@$(VENV)/bin/ruff check src
