@@ -56,15 +56,60 @@ with PortRegistry().reserve(preferred=8080, port_range=(8080, 8180), hold=True) 
 # Reserve preferred 8888 or a port in 8888..8988, hold it, and print JSON
 portkeeper reserve --preferred 8888 --range 8888 8988 --hold --owner myapp
 
-# Write .env with key=PORT
-portkeeper reserve --preferred 8080 --range 8080 8180 --write-env PORT --env-path .env
+# Write .env with key=PORT (default when no KEY is provided)
+portkeeper reserve --range-str 8080-8180 --write-env
 
-# Release from registry (best-effort; sockets held by other processes cannot be forcibly closed)
+# Generic presets (no product-specific names):
+#   service  -> preferred 8888, range 8888-8988, default env key SERVICE_PORT
+#   frontend -> preferred 8080, range 8080-8180, default env key FRONTEND_PORT
+portkeeper reserve --profile service --write-env
+portkeeper reserve --profile frontend --write-env
+
+# Release from registry (best-effort)
 portkeeper release 8080
 
 # Show registry json
 portkeeper status
 ```
+
+### Preflight multiple ports and outputs with `prepare`
+
+Use a single config (JSON or YAML) to reserve several ports and update multiple outputs before starting your stack.
+
+`pk.config.json` example:
+
+```json
+{
+  "host": "127.0.0.1",
+  "ports": [
+    { "key": "SERVICE_PORT", "preferred": 8888, "range": [8888, 8988] },
+    { "key": "FRONTEND_PORT", "preferred": 8080, "range": [8080, 8180] }
+  ],
+  "outputs": [
+    { "type": "env", "path": ".env" },
+    { "type": "json", "path": "config.json", "map": {
+      "httpUrl": "https://${SERVICE_HOST:-localhost}:${SERVICE_PORT}",
+      "wsUrl":   "wss://${SERVICE_HOST:-localhost}:${SERVICE_PORT}/ws"
+    }},
+    { "type": "runtime_js", "path": "runtime-config.js", "map": {
+      "httpUrl": "https://${SERVICE_HOST:-localhost}:${SERVICE_PORT}",
+      "wsUrl":   "wss://${SERVICE_HOST:-localhost}:${SERVICE_PORT}/ws"
+    }}
+  ]
+}
+```
+
+Run preflight:
+
+```bash
+portkeeper prepare --config pk.config.json
+# Optional YAML support (requires pyyaml): portkeeper prepare -c pk.config.yaml
+```
+
+- Reserves all ports up front
+- Writes `.env` generically (e.g., SERVICE_PORT, FRONTEND_PORT)
+- Updates JSON targets (including package.json) and a runtime JS snippet
+- Variable expansion supports `${VAR}` placeholders from reserved keys or environment
 
 ## Examples
 

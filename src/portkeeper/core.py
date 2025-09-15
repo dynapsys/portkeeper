@@ -6,7 +6,7 @@ import socket
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Iterator
+from typing import Dict, Optional, Tuple, Iterator, List, Set, Union
 
 # Cross-platform locking
 try:
@@ -117,66 +117,55 @@ class PortRegistry:
         except OSError:
             return False
 
-    def _find_free_in_range(self, host: str, rng: Tuple[int, int]) -> int:
-        start, end = rng
-        for p in range(start, end + 1):
-            if self._is_port_free(host, p):
-                return p
-        raise PortKeeperError(f"No free ports in range {rng}")
+    def _find_free_port(self, port_range: Tuple[int, int], host: str, used_ports: Optional[Set[int]] = None) -> Optional[int]:
+        """Find a free port in the given range that's not currently reserved or used."""
+        start, end = port_range
+        used_ports = used_ports or set()
+        # First, try to find a port that was previously released and can be reused
+        for port in range(start, end + 1):
+            if port in used_ports:
+                continue
+            key = f"{host}:{port}"
+            registry = self._read_registry()
+            if key not in registry:
+                # Verify the port is actually free on the system
+                if self._is_port_free(host, port):
+                    return port
+        # If no free port is found, return None
+        return None
 
     # --- public API ---
-    def reserve(self, preferred: Optional[int] = None, port_range: Optional[Tuple[int, int]] = None,
-                host: str = DEFAULT_HOST, hold: bool = False, owner: Optional[str] = None) -> Reservation:
+    def reserve(self, port_range: Optional[Tuple[int, int]] = None, host: str = DEFAULT_HOST, hold: bool = False, owner: Optional[str] = None, count: int = 1) -> Union[Reservation, List[Reservation]]:
+        """Reserve one or more ports, returning a single Reservation object if count=1, or a list of Reservation objects if count>1."""
         with FileLock(self.lock_path):
             registry = self._read_registry()
-            # Clean stale
-            cleaned = {}
-            for key, meta in registry.items():
-                try:
-                    if self._is_port_free(meta['host'], int(meta['port'])):
-                        continue
-                except Exception:
-                    continue
-                cleaned[key] = meta
-            registry = cleaned
-
-            candidates = []
-            if preferred is not None:
-                candidates.append(int(preferred))
-            if port_range is not None:
-                start, end = port_range
-                candidates.extend(list(range(start, end + 1)))
-
-            chosen = None
-            for p in candidates:
-                if self._is_port_free(host, p) and not any((m['port'] == p and m['host'] == host) for m in registry.values()):
-                    chosen = p
-                    break
-            if chosen is None:
-                if port_range is not None:
-                    chosen = self._find_free_in_range(host, port_range)
-                else:
-                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    s.bind((host, 0))
-                    chosen = s.getsockname()[1]
-                    s.close()
-
-            key = f"{host}:{chosen}"
-            registry[key] = { 'host': host, 'port': chosen, 'owner': owner or '', 'timestamp': time.time() }
+            port_range = port_range or (1024, 65535)
+            reservations = []
+            used_ports = set()
+            for _ in range(count):
+                port = self._find_free_port(port_range, host, used_ports)
+                if port is None:
+                    raise PortKeeperError(f"No free port in range {port_range}")
+                used_ports.add(port)
+                key = f"{host}:{port}"
+                registry[key] = { 'host': host, 'port': port, 'owner': owner or '', 'timestamp': time.time() }
+                reservations.append(Reservation(host=host, port=port, held=False))
             self._write_registry(registry)
 
-        res = Reservation(host=host, port=chosen, held=False)
+        # Handle holding of ports if requested
         if hold:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                sock.bind((host, chosen))
-                sock.listen(1)
-                res.held = True
-                res._holder_socket = sock
-            except OSError:
-                res.held = False
-        return res
+            for res in reservations:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    sock.bind((host, res.port))
+                    sock.listen(1)
+                    res.held = True
+                    res._holder_socket = sock
+                except OSError as e:
+                    print(f"Warning: Could not hold port {res.port} on {host}: {e}")
+                    res.held = False
+        return reservations[0] if count == 1 else reservations
 
     def release(self, reservation: Reservation) -> None:
         key = f"{reservation.host}:{reservation.port}"
@@ -196,20 +185,26 @@ class PortRegistry:
             pass
 
     # Context manager
-    def reserve_context(self, *args, **kwargs):
+    def reserve_context(self, *args, count: int = 1, **kwargs):
+        """Context manager for reserving one or more ports."""
         class _Ctx:
-            def __init__(self, reg, args, kwargs):
+            def __init__(self, reg, args, kwargs, count):
                 self.reg = reg
                 self.args = args
                 self.kwargs = kwargs
-                self.res = None
+                self.count = count
+                self.reservations = []
             def __enter__(self):
-                self.res = self.reg.reserve(*self.args, **self.kwargs)
-                return self.res
+                self.reservations = self.reg.reserve(*self.args, count=self.count, **self.kwargs)
+                return self.reservations if self.count > 1 else self.reservations[0] if self.reservations else None
             def __exit__(self, exc_type, exc, tb):
-                if self.res:
-                    self.reg.release(self.res)
-        return _Ctx(self, args, kwargs)
+                if self.reservations:
+                    if isinstance(self.reservations, list):
+                        for res in self.reservations:
+                            self.reg.release(res)
+                    else:
+                        self.reg.release(self.reservations)
+        return _Ctx(self, args, kwargs, count)
 
     # --- file helpers ---
     def write_env(self, data: Dict[str, str], path: str = '.env', merge: bool = True) -> None:

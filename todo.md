@@ -94,3 +94,10 @@ Status legend: [ ] pending • [~] in progress • [x] done
 Notes
 - Current local version: see `make version` (pyproject `version` / `__version__`).
 - If PyPI rejects an upload with "File already exists", run `make bump-patch && make publish`.
+
+
+
+- zadaniem portkeeper jest przed uruchomieniem aplikacji dopasowanie w zmiennych .env, docker, package.json, itd portow aby byly wolne w trakcie uruchamiania aplikacji
+- uywaj generycznych nazw dla zmiennych, czy to w docker, czy w .env a nie zapisuj hardkodowanych zmiennych typu visual, edmpt, to sa nazwy wlasne, zmien ten kod, aby komendy byly proste i byly wykonywane w tle, przed uruchomieniem uslugi 
+- i testowaly dostepnosc portow i aktualizuowaly wszystkie lub wybrane zmienne w docker, .env, package.json, itd 
+- w zaleznosci od typu projektu, przed samym uruchomieniem powinny byc sprawdzone wszystkie porty i zapisane bezposrednio w zmiennych w zalaeznsoci od konfiurgruacji projektu

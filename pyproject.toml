@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portkeeper"
-version = "0.1.12"
+version = "0.1.2"
 description = "Reserve and manage localhost ports; atomically update .env and config.json"
 readme = "README.md"
 requires-python = ">=3.8"
