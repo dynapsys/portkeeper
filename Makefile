@@ -43,15 +43,10 @@ build: venv install-dev
 	@echo "Building package with virtual environment..."
 	@$(VENV)/bin/python -m build || { echo "❌ Build failed. Check error messages above."; exit 1; }
 
-publish: build
+publish: release-patch build
 	@echo "⚠️ Ensure you have set TWINE_USERNAME and TWINE_PASSWORD environment variables or configured ~/.pypirc"
 	@bash scripts/publish.sh || { echo "❌ Publication failed. Check credentials or if version already exists on PyPI."; exit 1; }
 	@echo "✅ Successfully published to PyPI"
-
-publish-test: build
-	@echo "⚠️ Ensure you have set TWINE_USERNAME and TWINE_PASSWORD environment variables or configured ~/.pypirc"
-	@bash scripts/publish.sh --test || { echo "❌ Test publication failed. Check credentials or if version already exists on TestPyPI."; exit 1; }
-	@echo "✅ Successfully published to TestPyPI"
 
 test: venv install
 	@echo "Running unit tests with pytest..."

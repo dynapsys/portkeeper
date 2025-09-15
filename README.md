@@ -22,6 +22,29 @@ For local development (editable install):
 make install-dev
 ```
 
+## Quick Start (TL;DR)
+
+```bash
+# Get a free backend port (service profile 8888–8988) and run a server
+python3 -m http.server $(portkeeper port --profile service)
+
+# Or run without $(...) using token replacement
+portkeeper run --profile service -- python3 -m http.server {PORT}
+
+# Preflight multiple ports and update .env/config before starting your stack
+cat > pk.config.json << 'JSON'
+{
+  "host": "127.0.0.1",
+  "ports": [
+    { "key": "SERVICE_PORT",  "preferred": 8888, "range": [8888, 8988] },
+    { "key": "FRONTEND_PORT", "preferred": 8080, "range": [8080, 8180] }
+  ],
+  "outputs": [ { "type": "env", "path": ".env" } ]
+}
+JSON
+portkeeper prepare --config pk.config.json
+```
+
 ## Usage
 
 ### Python API
@@ -72,6 +95,37 @@ portkeeper release 8080
 portkeeper status
 ```
 
+#### Which `portkeeper` am I running?
+
+Make sure your shell resolves to the expected binary (e.g., project venv):
+
+```bash
+which portkeeper
+python - << 'PY'
+import portkeeper, sys
+print('path:', getattr(portkeeper, '__file__', '?'))
+print('version:', getattr(portkeeper, '__version__', '?'))
+PY
+
+# To force the venv version explicitly
+python -m portkeeper.cli status
+```
+
+### Command Line Interface
+
+PortKeeper now includes a CLI for easy port management:
+
+```bash
+# Reserve a port
+portkeeper reserve --host 127.0.0.1 --hold
+
+# Reserve a port within a specific range
+portkeeper reserve --range 8000-9000
+
+# Reserve a specific port
+portkeeper reserve --port 8080
+```
+
 ### Reserving a Single Port
 
 ```bash
@@ -118,6 +172,34 @@ Or release multiple ports:
 portkeeper release 5000 5001 5002
 ```
 
+## Network Scanning for Free Ports and Hosts
+
+PortKeeper can scan your local network to find free ports and hosts:
+
+```bash
+# Using the provided bash example
+bash examples/bash/port_scan.sh
+
+# Using the provided Python example
+python examples/python/network_scan.py
+```
+
+### Python API for Network Scanning
+
+```python
+from portkeeper import PortRegistry
+
+# Initialize registry
+registry = PortRegistry()
+
+# Scan local network for free ports
+free_ports_by_host = registry.scan_local_network(port_range=(8000, 8050))
+
+# Reserve a port on any available host
+reservation = registry.reserve_network_port(port_range=(8000, 8050), hold=True)
+print(f"Reserved port {reservation.port} on host {reservation.host}")
+```
+
 ## Preflight multiple ports and outputs with `prepare`
 
 Use a single config (JSON or YAML) to reserve several ports and update multiple outputs before starting your stack.
@@ -145,6 +227,33 @@ Use a single config (JSON or YAML) to reserve several ports and update multiple 
 }
 ```
 
+YAML example (`pk.config.yaml`):
+
+```yaml
+host: 127.0.0.1
+ports:
+  - key: SERVICE_PORT
+    preferred: 8888
+    range: [8888, 8988]
+  - key: FRONTEND_PORT
+    preferred: 8080
+    range: [8080, 8180]
+outputs:
+  - type: env
+    path: .env
+  - type: json
+    path: examples/visual-programming/config.json
+    map:
+      httpUrl: "https://${SERVICE_HOST:-localhost}:${SERVICE_PORT}"
+      wsUrl:   "wss://${SERVICE_HOST:-localhost}:${SERVICE_PORT}/ws"
+      visualUrl: "http://${FRONTEND_HOST:-localhost}:${FRONTEND_PORT}"
+  - type: runtime_js
+    path: examples/visual-programming/runtime-config.js
+    map:
+      httpUrl: "https://${SERVICE_HOST:-localhost}:${SERVICE_PORT}"
+      wsUrl:   "wss://${SERVICE_HOST:-localhost}:${SERVICE_PORT}/ws"
+```
+
 Run preflight:
 
 ```bash
@@ -156,6 +265,52 @@ portkeeper prepare --config pk.config.json
 - Writes `.env` generically (e.g., SERVICE_PORT, FRONTEND_PORT)
 - Updates JSON targets (including package.json) and a runtime JS snippet
 - Variable expansion supports `${VAR}` placeholders from reserved keys or environment
+
+### Integration: EDPMT (example)
+
+```bash
+# In EDPMT repo root
+source venv/bin/activate
+pip install -e /home/tom/github/dynapsys/portkeeper
+
+# Preflight ports and configs
+python -m portkeeper.cli prepare --config pk.config.json
+
+# Start services (wrapper for scripts/start-all.sh)
+make start
+
+# Or run frontend via run mode
+portkeeper run --profile frontend --env-key FRONTEND_PORT --write-env FRONTEND_PORT --env-path .env -- \
+  python3 -m http.server {PORT}
+```
+
+### Troubleshooting
+
+#### TypeError: `PortRegistry.reserve() got an unexpected keyword argument 'preferred'`
+
+Cause: CLI and core versions are mismatched (older core signature). Fixes:
+
+```bash
+# Ensure you use the intended venv
+source /path/to/venv/bin/activate
+pip install -U portkeeper
+
+# Force the venv’s CLI invocation
+python -m portkeeper.cli status
+
+# If needed, reinstall editable from your repo
+pip install -e /path/to/portkeeper
+```
+
+As a fallback to print a port using the positional signature:
+
+```bash
+python - << 'PY'
+from portkeeper.core import PortRegistry
+r = PortRegistry().reserve(8888, (8888, 8988), '127.0.0.1', False, None)
+print(r.port)
+PY
+```
 
 ## Examples
 

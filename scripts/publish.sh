@@ -1,158 +1,97 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-# Publish PortKeeper to PyPI or TestPyPI
-# Usage: scripts/publish.sh [--test] [--clean] [--username USER] [--password PASS] [--bump BUMP_TYPE]
-#   --test: Publish to TestPyPI instead of PyPI
-#   --clean: Clean build artifacts before building
-#   --username USER: Specify username (or token identifier, e.g., __token__)
-#   --password PASS: Specify password (or token value)
-#   --bump BUMP_TYPE: Increment version before publishing (patch, minor, major)
-#   If username/password not provided, falls back to TWINE_USERNAME/TWINE_PASSWORD env vars or ~/.pypirc
+# Colors for output
+GREEN="\033[0;32m"
+YELLOW="\033[1;33m"
+RED="\033[0;31m"
+NC="\033[0m" # No Color
 
-REPO="pypi"
-CLEAN="false"
-USERNAME=""
-PASSWORD=""
-BUMP_TYPE=""
-PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)
-VENV="$PROJECT_ROOT/.venv"
-PY="python3"
-PACKAGE_NAME="portkeeper"
+echo "${YELLOW}📦 Publishing to PyPI with automatic version increment...${NC}"
 
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    --test)
-      REPO="testpypi"
-      shift
+# Ensure setuptools and twine are installed
+echo "${YELLOW}Checking dependencies...${NC}"
+if ! python3 -c "import setuptools" &> /dev/null; then
+    echo "${YELLOW}Installing setuptools...${NC}"
+    pip3 install setuptools
+fi
+
+if ! command -v twine &> /dev/null; then
+    echo "${YELLOW}Installing twine...${NC}"
+    pip3 install twine
+fi
+
+# Function to increment version
+increment_version() {
+  local bump_type=$1
+  echo "${YELLOW}🔢 Auto-incrementing $bump_type version...${NC}"
+  
+  # Read current version from pyproject.toml
+  if ! current_version=$(grep "version =" pyproject.toml | head -1 | cut -d '"' -f 2); then
+    echo "${RED}❌ Error: Could not find version in pyproject.toml${NC}"
+    exit 1
+  fi
+  
+  if [ -z "$current_version" ]; then
+    echo "${RED}❌ Error: Version not found in pyproject.toml${NC}"
+    exit 1
+  fi
+  
+  IFS='.' read -r major minor patch <<< "$current_version"
+  case $bump_type in
+    "major")
+      major=$((major + 1))
+      minor=0
+      patch=0
       ;;
-    --clean)
-      CLEAN="true"
-      shift
+    "minor")
+      minor=$((minor + 1))
+      patch=0
       ;;
-    --username)
-      USERNAME="$2"
-      shift 2
-      ;;
-    --password)
-      PASSWORD="$2"
-      shift 2
-      ;;
-    --bump)
-      BUMP_TYPE="$2"
-      shift 2
+    "patch")
+      patch=$((patch + 1))
       ;;
     *)
-      echo "Unknown option: $1" >&2
+      echo "${RED}❌ Invalid bump type: $bump_type${NC}"
       exit 1
       ;;
   esac
-done
+  new_version="$major.$minor.$patch"
+  echo "${YELLOW}📈 Bumping version from $current_version to $new_version${NC}"
+  
+  # Update version in pyproject.toml
+  if ! sed -i "s/version = \"$current_version\"/version = \"$new_version\"/" pyproject.toml; then
+    echo "${RED}❌ Failed to update version in pyproject.toml${NC}"
+    exit 1
+  fi
+  
+  echo "${GREEN}✅ Version updated to $new_version${NC}"
+}
 
-echo "📦 Publishing to $REPO"
+# Auto-increment patch version
+increment_version "patch"
 
-# Create or reuse virtual environment
-if [ ! -d "$VENV" ]; then
-  echo "Creating virtual environment at $VENV..."
-  "$PY" -m venv "$VENV"
+# Clean previous builds
+echo "${YELLOW}🧹 Cleaning previous builds...${NC}"
+rm -rf build/ dist/ *.egg-info/
+
+# Build the package
+echo "${YELLOW}🏗️ Building package...${NC}"
+if python3 -m build; then
+    echo "${GREEN}✅ Package built successfully${NC}"
 else
-  echo "Using existing virtual environment at $VENV..."
+    echo "${RED}❌ Package build failed${NC}"
+    exit 1
 fi
 
-# Upgrade pip and install necessary tools
-"$VENV/bin/python" -m pip install -U pip
-"$VENV/bin/python" -m pip install build twine setuptools wheel
+# Upload to PyPI
+echo "${YELLOW}🚀 Uploading to PyPI...${NC}"
+if twine upload dist/*; then
+    echo "${GREEN}✅ Published to PyPI successfully${NC}"
 
-echo "✅ Virtual environment setup complete with necessary tools"
-
-# Bump version if requested
-if [ -n "$BUMP_TYPE" ]; then
-  echo "🔢 Bumping version ($BUMP_TYPE)..."
-  bash "$PROJECT_ROOT/scripts/bump-version.sh" "$BUMP_TYPE"
-fi
-
-# Clean build artifacts if requested
-if [ "$CLEAN" = "true" ]; then
-  echo "🧹 Cleaning build artifacts..."
-  rm -rf "$PROJECT_ROOT/build" "$PROJECT_ROOT/dist" "$PROJECT_ROOT"/*.egg-info "$PROJECT_ROOT/src"/*.egg-info
-  find "$PROJECT_ROOT" -name "__pycache__" -type d -exec rm -rf {} +
-fi
-
-# Build package
-echo "🔨 Building package..."
-cd "$PROJECT_ROOT"
-"$VENV/bin/python" -m build || { echo "❌ Build failed. Check error messages above."; exit 1; }
-
-echo "✅ Build successful"
-
-# Function to check if version already exists on PyPI or TestPyPI
-check_version_unique() {
-    local repo=$1
-    local package=$2
-    local version=$3
-    local url=""
-    if [ "$repo" == "pypi" ]; then
-        url="https://pypi.org/pypi/$package/$version/json"
-    else
-        url="https://test.pypi.org/pypi/$package/$version/json"
-    fi
-    if curl -s -f "$url" > /dev/null; then
-        return 0  # Version exists
-    else
-        return 1  # Version does not exist
-    fi
-}
-
-# Function to upload to TestPyPI
-test_upload() {
-    CURRENT_VERSION=$("$VENV/bin/python" -c "import portkeeper; print(portkeeper.__version__)")
-    check_version_unique "testpypi" "$PACKAGE_NAME" "$CURRENT_VERSION"
-    if [ $? -eq 0 ]; then
-        echo "❌ Version $CURRENT_VERSION already exists on TestPyPI. Please bump the version."
-        exit 1
-    fi
-    echo "🚀 Uploading to testpypi..."
-    echo "⚠️ To avoid interactive prompts, set TWINE_USERNAME and TWINE_PASSWORD environment variables or use --username and --password arguments."
-    echo "⚠️ For tokens, use username '__token__' and password 'pypi-<YOUR_TOKEN>'. See README.md for details."
-    echo "⚠️ If you encounter issues with password input, ensure your terminal supports secure input or use environment variables."
-    TWINE_ARGS=""
-    if [ -n "$USERNAME" ]; then
-      TWINE_ARGS="--username '$USERNAME'"
-    fi
-    if [ -n "$PASSWORD" ]; then
-      TWINE_ARGS="$TWINE_ARGS --password '$PASSWORD'"
-    fi
-    eval "$VENV/bin/python -m twine upload --repository testpypi $TWINE_ARGS dist/*" || { echo "❌ Test publication failed. Check credentials or if version already exists on TestPyPI."; echo "💡 Use 'export TWINE_USERNAME=\"__token__\"' and 'export TWINE_PASSWORD=\"pypi-<YOUR_TOKEN>\"' before running this script."; exit 1; }
-    echo "✅ Successfully published to TestPyPI"
-    echo "✅ View at: https://test.pypi.org/project/$PACKAGE_NAME/$CURRENT_VERSION/"
-}
-
-# Function to upload to PyPI
-upload() {
-    CURRENT_VERSION=$("$VENV/bin/python" -c "import portkeeper; print(portkeeper.__version__)")
-    check_version_unique "pypi" "$PACKAGE_NAME" "$CURRENT_VERSION"
-    if [ $? -eq 0 ]; then
-        echo "❌ Version $CURRENT_VERSION already exists on PyPI. Please bump the version."
-        exit 1
-    fi
-    echo "🚀 Uploading to pypi..."
-    echo "⚠️ To avoid interactive prompts, set TWINE_USERNAME and TWINE_PASSWORD environment variables or use --username and --password arguments."
-    echo "⚠️ For tokens, use username '__token__' and password 'pypi-<YOUR_TOKEN>'. See README.md for details."
-    echo "⚠️ If you encounter issues with password input, ensure your terminal supports secure input or use environment variables."
-    TWINE_ARGS=""
-    if [ -n "$USERNAME" ]; then
-      TWINE_ARGS="--username '$USERNAME'"
-    fi
-    if [ -n "$PASSWORD" ]; then
-      TWINE_ARGS="$TWINE_ARGS --password '$PASSWORD'"
-    fi
-    eval "$VENV/bin/python -m twine upload $TWINE_ARGS dist/*" || { echo "❌ Publication failed. Check credentials or if version already exists on PyPI."; exit 1; }
-    echo "✅ Successfully published to PyPI"
-    echo "✅ View at: https://pypi.org/project/$PACKAGE_NAME/$CURRENT_VERSION/"
-}
-
-if [ "$REPO" = "testpypi" ]; then
-  test_upload
+    # Get the new version for confirmation
+    NEW_VERSION=$(grep "version =" pyproject.toml | head -1 | cut -d '"' -f 2)
+    echo "${GREEN}🎉 New version ${NEW_VERSION} is now live on PyPI!${NC}"
 else
-  upload
+    echo "${RED}❌ Upload to PyPI failed${NC}"
+    exit 1
 fi

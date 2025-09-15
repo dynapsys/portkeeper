@@ -7,6 +7,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Iterator, List, Set, Union
+import threading
+import queue
+import ipaddress
+from typing import List, Tuple, Dict, Optional
 
 # Cross-platform locking
 try:
@@ -88,6 +92,7 @@ class PortRegistry:
         self.lock_path = lock_path or DEFAULT_LOCKFILE
         if not self.registry_path.exists():
             self._write_registry({})
+        self._network_scan_cache = {}
 
     # --- registry helpers ---
     def _read_registry(self) -> Dict[str, Dict]:
@@ -247,3 +252,100 @@ class PortRegistry:
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, p)
+
+    def scan_local_network(self, port_range: Tuple[int, int] = (8000, 9000), timeout: float = 0.1) -> Dict[str, List[int]]:
+        """
+        Scan the local network for free ports on all available hosts within the specified port range.
+        Returns a dictionary mapping host IP addresses to lists of free ports.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import netifaces
+
+        free_ports_by_host = {}
+        local_hosts = []
+
+        # Get all local network interfaces and their IP addresses
+        try:
+            for iface in netifaces.interfaces():
+                addrs = netifaces.ifaddresses(iface)
+                for family in (netifaces.AF_INET, netifaces.AF_INET6):
+                    if family in addrs:
+                        for addr in addrs[family]:
+                            ip = addr.get('addr')
+                            if ip and not ip.startswith('127.') and not ip == '::1':
+                                local_hosts.append(ip)
+        except Exception as e:
+            print(f"Warning: Could not enumerate local network interfaces: {e}")
+            local_hosts = ['127.0.0.1']
+
+        def scan_host_ports(host: str, start_port: int, end_port: int, timeout: float) -> Tuple[str, List[int]]:
+            free_ports = []
+            for port in range(start_port, end_port + 1):
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(timeout)
+                    result = s.connect_ex((host, port))
+                    if result != 0:  # Port is not in use
+                        free_ports.append(port)
+                    s.close()
+                except Exception:
+                    pass
+            return host, free_ports
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = []
+            for host in local_hosts:
+                futures.append(executor.submit(scan_host_ports, host, port_range[0], port_range[1], timeout))
+
+            for future in as_completed(futures):
+                host, free_ports = future.result()
+                if free_ports:
+                    free_ports_by_host[host] = free_ports
+
+        self._network_scan_cache = free_ports_by_host
+        return free_ports_by_host
+
+    def get_free_host_port(self, port_range: Tuple[int, int] = (8000, 9000), timeout: float = 0.1) -> Tuple[str, int]:
+        """
+        Find a free host and port combination in the local network.
+        Returns a tuple of (host, port) that is available.
+        """
+        if not self._network_scan_cache or not any(self._network_scan_cache.values()):
+            self.scan_local_network(port_range, timeout)
+
+        for host, ports in self._network_scan_cache.items():
+            if ports:
+                port = ports.pop(0)  # Take the first available port
+                return host, port
+
+        raise PortKeeperError(f"No free ports found in range {port_range[0]}-{port_range[1]} on local network hosts")
+
+    def reserve_network_port(self, port_range: Optional[Tuple[int, int]] = None, host: Optional[str] = None, hold: bool = False, owner: Optional[str] = None) -> Reservation:
+        """
+        Reserve a port on a specific host or any available host in the local network.
+        If host is not specified, it will find a free host and port combination.
+        """
+        if host is None:
+            host, port = self.get_free_host_port(port_range or (8000, 9000))
+        else:
+            port = self._find_free_port(port_range or (1024, 65535), host)
+
+        reservation = Reservation(host=host, port=port, held=hold)
+        if hold:
+            reservation._holder_socket = self._hold_port(host, port)
+        self._add_to_registry(reservation, owner=owner)
+        return reservation
+
+    def _hold_port(self, host: str, port: int) -> socket.socket:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, port))
+        sock.listen(1)
+        return sock
+
+    def _add_to_registry(self, reservation: Reservation, owner: Optional[str] = None) -> None:
+        key = f"{reservation.host}:{reservation.port}"
+        with FileLock(self.lock_path):
+            registry = self._read_registry()
+            registry[key] = { 'host': reservation.host, 'port': reservation.port, 'owner': owner or '', 'timestamp': time.time() }
+            self._write_registry(registry)

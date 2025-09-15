@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portkeeper"
-version = "0.2.7"
+version = "0.5.6"
 description = "A tool to manage and reserve free ports for your applications"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "Tom Sapletta", email = "tom@sapletta.com"},
+    {name = "Tom Sapletta", email = "info@softreck.dev"},
 ]
 keywords = ["port", "reservation", "management", "networking"]
 classifiers = [
@@ -31,8 +31,10 @@ Homepage = "https://github.com/dynapsys/portkeeper"
 Repository = "https://github.com/dynapsys/portkeeper.git"
 Issues = "https://github.com/dynapsys/portkeeper/issues"
 
-[project.scripts]
-portkeeper = "portkeeper.cli:main"
+[project.entry-points]
+"console_scripts" = """
+portkeeper=portkeeper.cli:main
+"""
 
 [tool.setuptools.packages.find]
 where = ["src"]
