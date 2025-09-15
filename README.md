@@ -29,5 +29,30 @@ with PortRegistry().reserve(preferred=8888, port_range=(8888, 8988), hold=True) 
 - `status` (list reserved ports in registry)
 - `gc` (garbage-collect stale registry entries)
 
+## Author
+
+**Tom Sapletta**  
+📧 Email: tom@dynapsys.com  
+🏢 Organization: DynapSys  
+🌐 Website: [dynapsys.com](https://dynapsys.com)  
+
+Tom Sapletta is a software engineer and the founder of DynapSys, specializing in system automation, DevOps tools, and infrastructure management solutions. With extensive experience in Python development and distributed systems, Tom focuses on creating tools that simplify complex development workflows.
+
+### Professional Background
+- **Expertise**: System Architecture, DevOps, Python Development
+- **Focus Areas**: Port Management, Infrastructure Automation, Development Tools
+- **Open Source**: Committed to building reliable, well-tested tools for the developer community
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
 ## License
-MIT
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at:
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+Copyright 2025 Tom Sapletta
