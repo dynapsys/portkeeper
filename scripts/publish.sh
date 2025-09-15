@@ -84,6 +84,19 @@ cd "$PROJECT_ROOT"
 
 echo "✅ Build successful"
 
+# Check if the version already exists on PyPI (for pypi repo only)
+CURRENT_VERSION=$("$VENV/bin/python" -c "import portkeeper; print(portkeeper.__version__)")
+if [ "$REPO" = "pypi" ]; then
+  echo "🔍 Checking if version $CURRENT_VERSION already exists on PyPI..."
+  if "$VENV/bin/python" -m pip install "portkeeper==$CURRENT_VERSION" --dry-run --no-deps --index-url https://pypi.org/simple >/dev/null 2>&1; then
+    echo "❌ Version $CURRENT_VERSION already exists on PyPI. Please bump the version before publishing."
+    echo "💡 Use --bump patch, --bump minor, or --bump major to increment the version."
+    exit 1
+  else
+    echo "✅ Version $CURRENT_VERSION is unique on PyPI. Proceeding with publication."
+  fi
+fi
+
 # Upload to repository
 echo "🚀 Uploading to $REPO..."
 echo "⚠️ To avoid interactive prompts, set TWINE_USERNAME and TWINE_PASSWORD environment variables or use --username and --password arguments."
@@ -99,7 +112,9 @@ fi
 if [ "$REPO" = "testpypi" ]; then
   eval "$VENV/bin/python -m twine upload --repository testpypi $TWINE_ARGS dist/*" || { echo "❌ Test publication failed. Check credentials or if version already exists on TestPyPI."; exit 1; }
   echo "✅ Successfully published to TestPyPI"
+  echo "✅ View at: https://test.pypi.org/project/portkeeper/$CURRENT_VERSION/"
 else
   eval "$VENV/bin/python -m twine upload $TWINE_ARGS dist/*" || { echo "❌ Publication failed. Check credentials or if version already exists on PyPI."; exit 1; }
   echo "✅ Successfully published to PyPI"
+  echo "✅ View at: https://pypi.org/project/portkeeper/$CURRENT_VERSION/"
 fi

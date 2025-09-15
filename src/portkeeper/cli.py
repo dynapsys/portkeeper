@@ -3,7 +3,38 @@ import argparse
 from .core import PortRegistry, Reservation
 
 def main():
-    parser = argparse.ArgumentParser(prog='portkeeper', description='Reserve ports and update .env/config.json')
+    parser = argparse.ArgumentParser(
+        description="PortKeeper - Reserve and manage TCP ports for local development.",
+        epilog="""Examples:
+  Reserve a port in the default range (8000-9000):
+    $ portkeeper reserve
+    {"port": 8000, "host": "localhost", "range": [8000, 9000]}
+
+  Reserve a port in a specific range and write to .env:
+    $ portkeeper reserve --range 5000-6000 --write-env
+    {"port": 5000, "host": "localhost", "range": [5000, 6000]}
+    # .env updated with PORT=5000
+
+  Reserve a preferred port if available, with fallback range:
+    $ portkeeper reserve --preferred 8080 --range 8000-8100
+    {"port": 8080, "host": "localhost", "range": [8000, 8100]}
+
+  Check status of reserved ports:
+    $ portkeeper status
+    [{"port": 8000, "host": "localhost", "pid": 1234, "since": "2025-09-15T10:00:00"}]
+
+  Release a specific port:
+    $ portkeeper release 8000
+    {"status": "released", "port": 8000}
+
+  Garbage collect stale reservations:
+    $ portkeeper gc
+    {"released": [8001, 8002], "message": "Stale reservations cleaned."}
+
+Visit https://pypi.org/project/portkeeper/ for more documentation and advanced usage.
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = parser.add_subparsers(dest='cmd')
 
     p_res = sub.add_parser('reserve', help='Reserve a port')
