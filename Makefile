@@ -43,10 +43,13 @@ build: venv install-dev
 	@echo "Building package with virtual environment..."
 	@$(VENV)/bin/python -m build || { echo "❌ Build failed. Check error messages above."; exit 1; }
 
-publish: release-patch build
-	@echo "⚠️ Ensure you have set TWINE_USERNAME and TWINE_PASSWORD environment variables or configured ~/.pypirc"
-	@bash scripts/publish.sh || { echo "❌ Publication failed. Check credentials or if version already exists on PyPI."; exit 1; }
-	@echo "✅ Successfully published to PyPI"
+publish-test:
+	@echo "📦 Publishing to TestPyPI..."
+	@bash scripts/publish.sh --test
+
+publish:
+	@echo "📦 Publishing to PyPI..."
+	@bash scripts/publish.sh
 
 test: venv install
 	@echo "Running unit tests with pytest..."
@@ -69,24 +72,18 @@ version: venv install
 bump-patch:
 	@bash scripts/bump-version.sh patch
 
-# Release rules combine version bump, build, and publish
-release-patch: venv install-dev
-	@bash scripts/bump-version.sh patch
-	@$(MAKE) clean
-	@bash scripts/publish.sh || { echo "❌ Publication failed. Check credentials or if version already exists on PyPI."; exit 1; }
-	@echo "✅ Released patch version"
+# Version increment rules
+release-patch:
+	@echo "📦 Releasing new patch version..."
+	@bash scripts/publish.sh --bump patch
 
-release-minor: venv install-dev
-	@bash scripts/bump-version.sh minor
-	@$(MAKE) clean
-	@bash scripts/publish.sh || { echo "❌ Publication failed. Check credentials or if version already exists on PyPI."; exit 1; }
-	@echo "✅ Released minor version"
+release-minor:
+	@echo "📦 Releasing new minor version..."
+	@bash scripts/publish.sh --bump minor
 
-release-major: venv install-dev
-	@bash scripts/bump-version.sh major
-	@$(MAKE) clean
-	@bash scripts/publish.sh || { echo "❌ Publication failed. Check credentials or if version already exists on PyPI."; exit 1; }
-	@echo "✅ Released major version"
+release-major:
+	@echo "📦 Releasing new major version..."
+	@bash scripts/publish.sh --bump major
 
 # Sign distribution artifacts with GPG (if available)
 sign-artifacts:
