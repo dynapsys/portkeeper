@@ -32,11 +32,11 @@ with PortRegistry().reserve(preferred=8888, port_range=(8888, 8988), hold=True) 
 ## Author
 
 **Tom Sapletta**  
-📧 Email: tom@dynapsys.com  
-🏢 Organization: DynapSys  
-🌐 Website: [dynapsys.com](https://dynapsys.com)  
+🏢 Organization: softreck  
+🌐 Website: [softreck.com](https://softreck.com)  
 
-Tom Sapletta is a software engineer and the founder of DynapSys, specializing in system automation, DevOps tools, and infrastructure management solutions. With extensive experience in Python development and distributed systems, Tom focuses on creating tools that simplify complex development workflows.
+Tom Sapletta is a software engineer and the founder of softreck, specializing in system automation, DevOps tools, and infrastructure management solutions. 
+With extensive experience in Python development and distributed systems, Tom focuses on creating tools that simplify complex development workflows.
 
 ### Professional Background
 - **Expertise**: System Architecture, DevOps, Python Development
