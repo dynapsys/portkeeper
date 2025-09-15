@@ -239,7 +239,34 @@ Here are several scenarios to demonstrate different ways to publish PortKeeper:
   make bump-patch
   make publish
   ```
-- **Credential Prompt Issues**: If the terminal doesn't support secure input, use environment variables or command-line arguments as shown in examples.
+- **Credential Prompt Issues**: If the terminal doesn't support secure input, use environment variables or command-line arguments as shown in examples. For a persistent solution, configure `~/.pypirc`:
+  1. Open or create the file `~/.pypirc` with a text editor.
+  2. Add the following content, replacing `<YOUR_TOKEN>` with your actual token for PyPI or TestPyPI:
+     ```ini
+     [distutils]
+     index-servers =
+       pypi
+       testpypi
+
+     [pypi]
+     repository = https://upload.pypi.org/legacy/
+     username = __token__
+     password = pypi-<YOUR_TOKEN>
+
+     [testpypi]
+     repository = https://test.pypi.org/legacy/
+     username = __token__
+     password = pypi-<YOUR_TOKEN>
+     ```
+  3. Save the file and ensure its permissions are set to readable only by you:
+     ```bash
+     chmod 600 ~/.pypirc
+     ```
+  4. Retry the publication command:
+     ```bash
+     make publish-test  # For TestPyPI
+     make publish       # For PyPI
+     ```
 - **Build Failures**: Ensure your `pyproject.toml` is compliant with PEP 639 (license classifiers removed). If issues persist, clean the virtual environment and rebuild:
   ```bash
   rm -rf .venv
