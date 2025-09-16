@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portkeeper"
-version = "0.5.44"
+version = "0.5.45"
 description = "A tool to manage and reserve free ports for your applications"
 readme = "README.md"
 requires-python = ">=3.8"

@@ -31,20 +31,21 @@ def main():
                 print(f"❌ Invalid range format: {args.range}. Use 'start-end'.")
                 sys.exit(1)
 
+        registry = PortRegistry(args.registry, args.lock)
         try:
             reservation = registry.reserve(
-                preferred=args.port,
                 port_range=port_range,
                 host=args.host,
                 hold=args.hold,
-                owner=args.owner
+                owner=args.owner,
+                preferred=args.port
             )
             print(f"✅ Reserved port {reservation.port} on {reservation.host}")
             if reservation.held:
                 print("🔒 Port is held open with a socket")
             print(f"Use 'portkeeper release' to release this port.")
         except Exception as e:
-            print(f"❌ Failed to reserve port: {e}")
+            print(f"❌ Failed to reserve port: {str(e)}", file=sys.stderr)
             sys.exit(1)
 
     elif args.command == "release":

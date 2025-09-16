@@ -77,10 +77,15 @@ with PortRegistry().reserve(preferred=8080, port_range=(8080, 8180), hold=True) 
 
 ```bash
 # Reserve preferred 8888 or a port in 8888..8988, hold it, and print JSON
-portkeeper reserve --preferred 8888 --range 8888 8988 --hold --owner myapp
+portkeeper reserve --preferred 8888 --range 8888-8988 --hold --owner myapp
 
-# Write .env with key=PORT (default when no KEY is provided)
-portkeeper reserve --range-str 8080-8180 --write-env
+# To write to .env file, use:
+portkeeper reserve --range 8080-8180
+# Then manually update .env with PORT=[reserved_port]
+
+# For different services, specify manually:
+portkeeper reserve --range 8888-8988 --hold --owner service
+portkeeper reserve --range 8080-8180 --hold --owner frontend
 
 # Generic presets (no product-specific names):
 #   service  -> preferred 8888, range 8888-8988, default env key SERVICE_PORT

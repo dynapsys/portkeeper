@@ -181,5 +181,46 @@ class TestPortRegistry(unittest.TestCase):
         else:
             self.fail("Expected a list of reservations")
 
+    def test_reserve_with_preferred_port(self):
+        """Test that a preferred port can be successfully reserved."""
+        preferred_port = 8080
+        reservation = self.registry.reserve(preferred=preferred_port)
+        self.assertEqual(reservation.port, preferred_port)
+
+    def test_reserve_with_unavailable_preferred_port(self):
+        """Test that reservation falls back when preferred port is unavailable."""
+        # First reserve the preferred port
+        preferred_port = 8080
+        self.registry.reserve(preferred=preferred_port)
+
+        # Try to reserve same port again with different owner
+        reservation = self.registry.reserve(preferred=preferred_port)
+        self.assertNotEqual(reservation.port, preferred_port)
+
+    def test_reserve_with_invalid_preferred_port(self):
+        """Test that invalid preferred ports raise appropriate errors."""
+        with self.assertRaises(PortKeeperError):
+            self.registry.reserve(preferred=-1)  # Invalid port number
+
+        with self.assertRaises(PortKeeperError):
+            self.registry.reserve(preferred=65536)  # Port number too high
+
+    def test_preferred_port_with_range(self):
+        """Test that preferred port works with port range constraints."""
+        # Preferred port outside range should be ignored
+        reservation = self.registry.reserve(
+            port_range=(8000, 9000),
+            preferred=8080
+        )
+        self.assertEqual(reservation.port, 8080)
+
+        # Preferred port within range should work
+        reservation = self.registry.reserve(
+            port_range=(9000, 10000),
+            preferred=8080
+        )
+        self.assertNotEqual(reservation.port, 8080)
+        self.assertTrue(9000 <= reservation.port <= 10000)
+
 if __name__ == '__main__':
     unittest.main()

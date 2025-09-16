@@ -28,6 +28,7 @@ except Exception:
 DEFAULT_REGISTRY = os.environ.get("PORTKEEPER_REGISTRY", ".port_registry.json")
 DEFAULT_LOCKFILE = os.environ.get("PORTKEEPER_LOCK", ".port_registry.lock")
 DEFAULT_HOST = os.environ.get("PORTKEEPER_HOST", "127.0.0.1")
+DEFAULT_PORT_RANGE = (1024, 65535)
 
 
 class PortKeeperError(Exception):
@@ -140,37 +141,43 @@ class PortRegistry:
         return None
 
     # --- public API ---
-    def reserve(self, port_range: Optional[Tuple[int, int]] = None, host: str = DEFAULT_HOST, hold: bool = False, owner: Optional[str] = None, count: int = 1) -> Union[Reservation, List[Reservation]]:
-        """Reserve one or more ports, returning a single Reservation object if count=1, or a list of Reservation objects if count>1."""
+    def reserve(self, port_range: Optional[Tuple[int, int]] = None, 
+               host: str = DEFAULT_HOST, hold: bool = False, 
+               owner: Optional[str] = None, count: int = 1,
+               preferred: Optional[int] = None):
+        """
+        Reserve one or more ports, with optional preferred port.
+        Returns a single Reservation object if count=1, or a list if count>1.
+        """
+        if count < 1:
+            raise PortKeeperError("Cannot reserve fewer than 1 port")
+            
         with FileLock(self.lock_path):
             registry = self._read_registry()
-            port_range = port_range or (1024, 65535)
-            reservations = []
-            used_ports = set()
-            for _ in range(count):
-                port = self._find_free_port(port_range, host, used_ports)
-                if port is None:
-                    raise PortKeeperError(f"No free port in range {port_range}")
-                used_ports.add(port)
-                key = f"{host}:{port}"
-                registry[key] = { 'host': host, 'port': port, 'owner': owner or '', 'timestamp': time.time() }
-                reservations.append(Reservation(host=host, port=port, held=False))
-            self._write_registry(registry)
-
-        # Handle holding of ports if requested
-        if hold:
-            for res in reservations:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    sock.bind((host, res.port))
-                    sock.listen(1)
-                    res.held = True
-                    res._holder_socket = sock
-                except OSError as e:
-                    print(f"Warning: Could not hold port {res.port} on {host}: {e}")
-                    res.held = False
-        return reservations[0] if count == 1 else reservations
+            host_key = str(ipaddress.ip_address(host))
+            used_ports = {int(p) for p in registry.get(host_key, {}).keys()}
+            
+            # Try preferred port first if specified
+            if preferred is not None:
+                if preferred not in used_ports and self._is_port_free(host, preferred):
+                    reservation = Reservation(host, preferred, hold)
+                    if hold:
+                        self._hold_port(host, preferred)
+                    self._add_to_registry(reservation, owner)
+                    return [reservation] if count == 1 else [reservation] + \
+                        self.reserve(port_range, host, hold, owner, count-1, preferred=None)
+            
+            # Fall back to normal port finding logic
+            port = self._find_free_port(port_range or DEFAULT_PORT_RANGE, host, used_ports)
+            reservation = Reservation(host, port, hold)
+            if hold:
+                self._hold_port(host, port)
+            self._add_to_registry(reservation, owner)
+            
+            if count == 1:
+                return reservation
+            else:
+                return [reservation] + self.reserve(port_range, host, hold, owner, count-1)
 
     def release(self, reservation: Reservation) -> None:
         key = f"{reservation.host}:{reservation.port}"
