@@ -4,7 +4,8 @@ import unittest
 import os
 import tempfile
 import json
-from portkeeper.core import PortRegistry, PortKeeperError
+import threading
+from portkeeper.core import FileLock, PortRegistry, PortKeeperError
 
 class TestPortRegistry(unittest.TestCase):
     def setUp(self):
@@ -106,6 +107,23 @@ class TestPortRegistry(unittest.TestCase):
             for res in reservations:
                 key = f"127.0.0.1:{res.port}"
                 self.assertIn(key, data, f"Key {key} not found in registry file")
+
+    def test_file_lock_is_reentrant(self):
+        """Test that nesting FileLock on the same path in the same thread does not deadlock."""
+        lock_path = os.path.join(self.temp_dir, "nested.lock")
+        acquired = threading.Event()
+
+        def nested_lock():
+            with FileLock(lock_path):
+                with FileLock(lock_path):
+                    acquired.set()
+
+        # Run in a daemon thread so a deadlock fails the test instead of hanging the suite
+        thread = threading.Thread(target=nested_lock, daemon=True)
+        thread.start()
+        thread.join(timeout=5)
+        os.remove(lock_path)
+        self.assertTrue(acquired.is_set(), "Nested FileLock on the same path deadlocked")
 
     def test_reserve_port_range_exhausted(self):
         """Test behavior when the port range is exhausted."""

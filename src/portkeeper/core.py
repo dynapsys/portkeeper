@@ -44,11 +44,42 @@ class Reservation:
 
 
 class FileLock:
+    """Inter-process file lock, re-entrant within the same thread.
+
+    flock() locks belong to the open file description, so taking a second lock on the
+    same path from the same process (e.g. reserve() -> _add_to_registry()) would block
+    forever. Nested acquisitions only bump a per-thread depth counter, and the OS lock
+    is released when the outermost one exits. Threads are serialized by a class RLock.
+    """
+
+    _thread_lock = threading.RLock()
+    _local = threading.local()
+
     def __init__(self, path: str):
         self.path = path
         self.fd = None
 
+    def _depths(self) -> Dict[str, int]:
+        if not hasattr(FileLock._local, 'depths'):
+            FileLock._local.depths = {}
+        return FileLock._local.depths
+
     def __enter__(self):
+        FileLock._thread_lock.acquire()
+        key = os.path.abspath(self.path)
+        depths = self._depths()
+        if depths.get(key, 0) > 0:
+            depths[key] += 1
+            return self
+        try:
+            self._acquire()
+        except BaseException:
+            FileLock._thread_lock.release()
+            raise
+        depths[key] = 1
+        return self
+
+    def _acquire(self):
         open(self.path, 'a').close()
         if _HAS_FCNTL:
             self.fd = open(self.path, 'r+')
@@ -64,9 +95,19 @@ class FileLock:
                     break
                 except FileExistsError:
                     time.sleep(0.05)
-        return self
 
     def __exit__(self, exc_type, exc, tb):
+        key = os.path.abspath(self.path)
+        depths = self._depths()
+        try:
+            depths[key] -= 1
+            if depths[key] == 0:
+                del depths[key]
+                self._release()
+        finally:
+            FileLock._thread_lock.release()
+
+    def _release(self):
         try:
             if _HAS_FCNTL and self.fd:
                 fcntl.flock(self.fd.fileno(), fcntl.LOCK_UN)
